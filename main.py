@@ -16,21 +16,45 @@ if "cart" not in st.session_state:
     st.session_state.cart = []
 if "page" not in st.session_state:
     st.session_state.page = "menu"
+if "category" not in st.session_state:
+    st.session_state.category = None
 
-# Product definitions
+# Product definitions organized by category with Swedish translations
 PRODUCTS = {
-    "Popcorn": 5.00,
-    "Soda": 2.50,
-    "Candy": 3.00
+    "Drycker": {
+        "Läsk": 2.50,
+        "Vatten": 1.50,
+        "Juice": 3.00,
+        "Slush": 4.00
+    },
+    "Popcorn & Chips": {
+        "Liten Popcorn": 3.50,
+        "Stor Popcorn": 5.00,
+        "Potatischips": 2.00,
+        "Nachos": 4.50
+    },
+    "Godis": {
+        "Chokladkaka": 2.50,
+        "Gelégodis": 3.00,
+        "Lakrits": 2.75,
+        "Godismix": 4.00
+    }
 }
 
-def add_to_cart(item):
+# Category emoji mapping
+CATEGORY_EMOJIS = {
+    "Drycker": "🥤",
+    "Popcorn & Chips": "🍿",
+    "Godis": "🍫"
+}
+
+def add_to_cart(item, category):
     """Add an item to the cart"""
-    st.session_state.cart.append(item)
+    st.session_state.cart.append({"item": item, "category": category})
     # Insert into Supabase cart table
     supabase.table("cart").insert({
         "item": item,
-        "price": PRODUCTS[item]
+        "price": PRODUCTS[category][item]
     }).execute()
 
 def clear_cart():
@@ -53,92 +77,137 @@ def complete_payment():
     clear_cart()
     st.session_state.page = "success"
 
+def set_category(category):
+    """Set the active category"""
+    st.session_state.category = category
+
+def calculate_total():
+    """Calculate total price of items in cart"""
+    return sum(PRODUCTS[cart_item["category"]][cart_item["item"]] for cart_item in st.session_state.cart)
+
+def display_large_emoji(emoji):
+    """Display a large emoji using markdown"""
+    st.markdown(f"<div style='font-size:50px; text-align:center;'>{emoji}</div>", unsafe_allow_html=True)
+
 def menu_page():
     """Display the main cashier interface"""
-    st.title("Kid's Shop Cashier")
+    st.title("Barnbutikens Kassa")
     
     # Display current cart
     if st.session_state.cart:
-        st.subheader("Current Cart")
-        for item in st.session_state.cart:
-            st.write(f"{item}: ${PRODUCTS[item]:.2f}")
-        total = sum(PRODUCTS[item] for item in st.session_state.cart)
-        st.subheader(f"Total: ${total:.2f}")
+        st.subheader("Nuvarande Varukorg")
+        for cart_item in st.session_state.cart:
+            item, category = cart_item["item"], cart_item["category"]
+            st.write(f"{item}: {PRODUCTS[category][item]:.2f} kr")
+        total = calculate_total()
+        st.subheader(f"Totalt: {total:.2f} kr")
     
-    # Create 3 columns for the 3 product buttons
-    col1, col2, col3 = st.columns(3)
+    # Category buttons
+    st.subheader("Kategorier")
+    category_cols = st.columns(len(PRODUCTS))
     
-    # Big product buttons
-    with col1:
-        if st.button("🍿 Popcorn\n$5.00", key="popcorn_btn", use_container_width=True):
-            add_to_cart("Popcorn")
-            st.rerun()
+    for i, category in enumerate(PRODUCTS.keys()):
+        with category_cols[i]:
+            # Display large emoji above the button
+            display_large_emoji(CATEGORY_EMOJIS[category])
+            if st.button(f"{category}", key=f"{category}_btn", use_container_width=True):
+                set_category(category)
+                st.rerun()
     
-    with col2:
-        if st.button("🥤 Soda\n$2.50", key="soda_btn", use_container_width=True):
-            add_to_cart("Soda")
-            st.rerun()
-            
-    with col3:
-        if st.button("🍫 Candy\n$3.00", key="candy_btn", use_container_width=True):
-            add_to_cart("Candy")
-            st.rerun()
+    # Display items from selected category
+    if st.session_state.category:
+        st.markdown(f"### {st.session_state.category}")
+        st.markdown(f"<div style='font-size:70px; text-align:center;'>{CATEGORY_EMOJIS[st.session_state.category]}</div>", unsafe_allow_html=True)
+        
+        # Create a grid of product buttons (2 columns)
+        items = PRODUCTS[st.session_state.category]
+        item_list = list(items.keys())
+        
+        # Calculate how many rows we need
+        rows = (len(item_list) + 1) // 2
+        
+        for row in range(rows):
+            cols = st.columns(2)
+            for col in range(2):
+                idx = row * 2 + col
+                if idx < len(item_list):
+                    item = item_list[idx]
+                    price = items[item]
+                    with cols[col]:
+                        if st.button(f"{item}\n{price:.2f} kr", key=f"{item}_btn", use_container_width=True):
+                            add_to_cart(item, st.session_state.category)
+                            st.rerun()
     
     # Pay and Clear buttons
     col_pay, col_clear = st.columns(2)
     with col_pay:
-        if st.button("💰 PAY NOW", key="pay_btn", use_container_width=True):
+        # Display emoji above the button
+        display_large_emoji("💰")
+        if st.button("BETALA NU", key="pay_btn", use_container_width=True):
             go_to_payment()
             st.rerun()
     
     with col_clear:
-        if st.button("🗑️ Clear Cart", key="clear_btn", use_container_width=True):
+        # Display emoji above the button
+        display_large_emoji("🗑️")
+        if st.button("Töm Varukorg", key="clear_btn", use_container_width=True):
             clear_cart()
             st.rerun()
 
 def payment_page():
     """Display the payment page"""
-    st.title("Payment")
+    st.title("Betalning")
     
     # Show cart summary
     if st.session_state.cart:
-        st.subheader("Items to Pay")
-        for item in st.session_state.cart:
-            st.write(f"{item}: ${PRODUCTS[item]:.2f}")
-        total = sum(PRODUCTS[item] for item in st.session_state.cart)
-        st.subheader(f"Total: ${total:.2f}")
+        st.subheader("Varor att Betala")
+        for cart_item in st.session_state.cart:
+            item, category = cart_item["item"], cart_item["category"]
+            st.write(f"{item}: {PRODUCTS[category][item]:.2f} kr")
+        total = calculate_total()
+        st.subheader(f"Totalt: {total:.2f} kr")
         
         # Payment method selection (just for UI, not functional)
-        payment_method = st.selectbox("Select Payment Method", ["Cash", "Credit Card"])
+        payment_method = st.selectbox("Välj Betalningsmetod", ["Kontant", "Betalkort"])
         
         # Pay button
-        if st.button("Complete Payment", use_container_width=True):
+        display_large_emoji("💳")
+        if st.button("Slutför Betalning", use_container_width=True):
             complete_payment()
             st.rerun()
     else:
-        st.warning("Your cart is empty!")
+        st.warning("Din varukorg är tom!")
     
     # Back button
-    if st.button("Back to Menu", use_container_width=True):
+    display_large_emoji("⬅️")
+    if st.button("Tillbaka till Menyn", use_container_width=True):
         go_to_menu()
         st.rerun()
 
 def success_page():
     """Display success message after payment"""
-    st.success("Payment successful! Thank you for your purchase.")
+    st.success("Betalningen lyckades! Tack för ditt köp.")
     
-    if st.button("Return to Menu", use_container_width=True):
+    display_large_emoji("✅")
+    if st.button("Tillbaka till Menyn", use_container_width=True):
         go_to_menu()
         st.rerun()
 
 def main():
+    # Configure Streamlit page
+    st.set_page_config(
+        page_title="Barnbutikens Kassa",
+        layout="wide",
+    )
+    
     # Add some custom CSS for larger buttons
     st.markdown("""
     <style>
     div.stButton > button {
         font-size: 24px !important;
-        height: 100px;
-        padding: 20px 10px;
+        height: 80px;
+        padding: 10px;
+        white-space: pre-wrap;
     }
     </style>
     """, unsafe_allow_html=True)
